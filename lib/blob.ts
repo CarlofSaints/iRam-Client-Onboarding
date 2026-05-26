@@ -1,4 +1,4 @@
-import { put, list, del } from "@vercel/blob";
+import { put, get, list, del } from "@vercel/blob";
 import { readFileSync, writeFileSync, existsSync, mkdirSync, unlinkSync } from "fs";
 import { join, dirname } from "path";
 
@@ -12,9 +12,9 @@ function localPath(key: string): string {
 
 /* ── In-memory write-through cache ──
    Prevents stale CDN reads after a write within the same warm instance.
-   Entries expire after 15 seconds so we don't serve permanently stale data. */
+   Entries expire after 30 seconds so we don't serve permanently stale data. */
 const writeCache = new Map<string, { json: string; ts: number }>();
-const CACHE_TTL_MS = 15_000;
+const CACHE_TTL_MS = 30_000;
 
 export async function readJson<T>(key: string, fallback: T): Promise<T> {
   const fullKey = key.startsWith(PREFIX) ? key : PREFIX + key;
@@ -38,13 +38,15 @@ export async function readJson<T>(key: string, fallback: T): Promise<T> {
     }
   }
 
+  // Use the SDK get() to read blob by pathname (bypasses list + URL fetch)
   try {
-    const { blobs } = await list({ prefix: fullKey, limit: 1 });
-    const match = blobs.find((b) => b.pathname === fullKey);
-    if (!match) return fallback;
-    const res = await fetch(`${match.url}?t=${Date.now()}`, { cache: "no-store" });
-    if (!res.ok) return fallback;
-    return JSON.parse(await res.text()) as T;
+    const result = await get(fullKey, { access: "public" });
+    if (!result || result.statusCode !== 200) return fallback;
+    const text = await new Response(result.stream).text();
+    const parsed = JSON.parse(text) as T;
+    // Warm the cache with what we just read
+    writeCache.set(fullKey, { json: text, ts: Date.now() });
+    return parsed;
   } catch {
     return fallback;
   }
@@ -66,6 +68,7 @@ export async function writeJson<T>(key: string, data: T): Promise<void> {
     addRandomSuffix: false,
     allowOverwrite: true,
     contentType: "application/json",
+    cacheControlMaxAge: 60, // Minimum allowed — reduces CDN staleness from 30 days to 1 minute
   });
 
   // Cache the written data so subsequent reads in the same instance get fresh data
@@ -113,6 +116,7 @@ export async function writeBlob(
     addRandomSuffix: false,
     allowOverwrite: true,
     contentType,
+    cacheControlMaxAge: 60,
   });
   return blob.url;
 }
