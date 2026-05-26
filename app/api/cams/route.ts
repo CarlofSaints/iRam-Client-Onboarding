@@ -127,23 +127,20 @@ export async function DELETE(req: NextRequest) {
 
     const cams = await readJson<CAM[]>(BLOB_KEY, []);
     const target = cams.find((c) => c.id === id);
-    if (!target) {
-      return Response.json(
-        { error: "CAM not found" },
-        { status: 404, headers: noCacheHeaders() }
-      );
+
+    // Idempotent delete — if not found, treat as already deleted
+    if (target) {
+      const filtered = cams.filter((c) => c.id !== id);
+      await writeJson(BLOB_KEY, filtered);
+
+      await addLog({
+        userId: session.userId,
+        userName: session.name,
+        action: "Deleted CAM",
+        details: `${target.name} ${target.surname}`,
+        status: "success",
+      });
     }
-
-    const filtered = cams.filter((c) => c.id !== id);
-    await writeJson(BLOB_KEY, filtered);
-
-    await addLog({
-      userId: session.userId,
-      userName: session.name,
-      action: "Deleted CAM",
-      details: `${target.name} ${target.surname}`,
-      status: "success",
-    });
 
     return Response.json({ success: true }, { headers: noCacheHeaders() });
   } catch (err) {

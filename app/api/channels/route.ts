@@ -113,23 +113,20 @@ export async function DELETE(req: NextRequest) {
 
     const channels = await readJson<Channel[]>(BLOB_KEY, []);
     const target = channels.find((c) => c.id === id);
-    if (!target) {
-      return Response.json(
-        { error: "Channel not found" },
-        { status: 404, headers: noCacheHeaders() }
-      );
+
+    // Idempotent delete — if not found, treat as already deleted
+    if (target) {
+      const filtered = channels.filter((c) => c.id !== id);
+      await writeJson(BLOB_KEY, filtered);
+
+      await addLog({
+        userId: session.userId,
+        userName: session.name,
+        action: "Deleted channel",
+        details: target.name,
+        status: "success",
+      });
     }
-
-    const filtered = channels.filter((c) => c.id !== id);
-    await writeJson(BLOB_KEY, filtered);
-
-    await addLog({
-      userId: session.userId,
-      userName: session.name,
-      action: "Deleted channel",
-      details: target.name,
-      status: "success",
-    });
 
     return Response.json({ success: true }, { headers: noCacheHeaders() });
   } catch (err) {

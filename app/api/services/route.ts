@@ -120,23 +120,20 @@ export async function DELETE(req: NextRequest) {
 
     const services = await readJson<Service[]>(BLOB_KEY, []);
     const target = services.find((s) => s.id === id);
-    if (!target) {
-      return Response.json(
-        { error: "Service not found" },
-        { status: 404, headers: noCacheHeaders() }
-      );
+
+    // Idempotent delete — if not found, treat as already deleted
+    if (target) {
+      const filtered = services.filter((s) => s.id !== id);
+      await writeJson(BLOB_KEY, filtered);
+
+      await addLog({
+        userId: session.userId,
+        userName: session.name,
+        action: "Deleted service",
+        details: target.name,
+        status: "success",
+      });
     }
-
-    const filtered = services.filter((s) => s.id !== id);
-    await writeJson(BLOB_KEY, filtered);
-
-    await addLog({
-      userId: session.userId,
-      userName: session.name,
-      action: "Deleted service",
-      details: target.name,
-      status: "success",
-    });
 
     return Response.json({ success: true }, { headers: noCacheHeaders() });
   } catch (err) {
