@@ -10,6 +10,12 @@ function localPath(key: string): string {
   return join(DATA_DIR, key.replace(PREFIX, ""));
 }
 
+/* ── In-memory write-through cache ──
+   Prevents stale CDN reads after a write within the same warm instance.
+   Entries expire after 15 seconds so we don't serve permanently stale data. */
+const writeCache = new Map<string, { json: string; ts: number }>();
+const CACHE_TTL_MS = 15_000;
+
 export async function readJson<T>(key: string, fallback: T): Promise<T> {
   const fullKey = key.startsWith(PREFIX) ? key : PREFIX + key;
   if (!useBlob) {
@@ -21,6 +27,17 @@ export async function readJson<T>(key: string, fallback: T): Promise<T> {
       return fallback;
     }
   }
+
+  // Check write cache first (avoids stale CDN reads after recent writes)
+  const cached = writeCache.get(fullKey);
+  if (cached && Date.now() - cached.ts < CACHE_TTL_MS) {
+    try {
+      return JSON.parse(cached.json) as T;
+    } catch {
+      writeCache.delete(fullKey);
+    }
+  }
+
   try {
     const { blobs } = await list({ prefix: fullKey, limit: 1 });
     const match = blobs.find((b) => b.pathname === fullKey);
@@ -35,22 +52,32 @@ export async function readJson<T>(key: string, fallback: T): Promise<T> {
 
 export async function writeJson<T>(key: string, data: T): Promise<void> {
   const fullKey = key.startsWith(PREFIX) ? key : PREFIX + key;
+  const json = JSON.stringify(data, null, 2);
+
   if (!useBlob) {
     const p = localPath(fullKey);
     mkdirSync(dirname(p), { recursive: true });
-    writeFileSync(p, JSON.stringify(data, null, 2));
+    writeFileSync(p, json);
     return;
   }
-  await put(fullKey, JSON.stringify(data, null, 2), {
+
+  await put(fullKey, json, {
     access: "public",
     addRandomSuffix: false,
     allowOverwrite: true,
     contentType: "application/json",
   });
+
+  // Cache the written data so subsequent reads in the same instance get fresh data
+  writeCache.set(fullKey, { json, ts: Date.now() });
 }
 
 export async function deleteBlob(key: string): Promise<void> {
   const fullKey = key.startsWith(PREFIX) ? key : PREFIX + key;
+
+  // Clear cache for this key
+  writeCache.delete(fullKey);
+
   if (!useBlob) {
     try {
       const p = localPath(fullKey);
