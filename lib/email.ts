@@ -65,6 +65,78 @@ export async function sendWelcomeEmail(params: {
   });
 }
 
+export async function sendCamNotificationEmail(params: {
+  to: string;
+  camName: string;
+  clientName: string;
+  channels: { name: string; services: string[] }[];
+  contactName: string;
+  contactEmail: string;
+}): Promise<void> {
+  const resend = getResend();
+
+  const channelRows = params.channels
+    .map((ch) => {
+      const svcList = ch.services.length > 0
+        ? ch.services.map((s) => `<li style="font-size:14px;color:#4A5568;padding:2px 0;">${s}</li>`).join("")
+        : `<li style="font-size:14px;color:#A0AEC0;padding:2px 0;font-style:italic;">No services specified</li>`;
+      return `
+        <div style="margin-bottom:16px;">
+          <p style="font-size:14px;font-weight:600;color:#2D3748;margin:0 0 6px;">${ch.name}</p>
+          <ul style="margin:0;padding-left:20px;">${svcList}</ul>
+        </div>`;
+    })
+    .join("");
+
+  await resend.emails.send({
+    from: FROM,
+    to: params.to,
+    subject: `New Account Assigned \u2014 ${params.clientName}`,
+    html: `
+      <div style="font-family:Arial,Helvetica,sans-serif;max-width:600px;margin:0 auto;background:#ffffff;">
+        <div style="background:#7CC042;padding:28px 32px;text-align:center;border-radius:8px 8px 0 0;">
+          <h1 style="color:#ffffff;font-size:22px;margin:0;font-weight:700;">iRam Client Onboarding</h1>
+          <p style="color:rgba(255,255,255,0.85);font-size:14px;margin:8px 0 0;">OuterJoin</p>
+        </div>
+        <div style="padding:32px;border:1px solid #E2E8F0;border-top:none;border-radius:0 0 8px 8px;">
+          <p style="font-size:15px;color:#2D3748;margin:0 0 16px;">Hi ${params.camName},</p>
+          <p style="font-size:14px;color:#4A5568;margin:0 0 24px;line-height:1.6;">
+            You have been assigned a new account \u2014 <strong>${params.clientName}</strong>.
+          </p>
+
+          <div style="background:#F7FAFC;border:1px solid #E2E8F0;border-radius:8px;padding:20px;margin-bottom:20px;">
+            <p style="font-size:12px;text-transform:uppercase;letter-spacing:0.5px;color:#718096;margin:0 0 12px;font-weight:600;">Channels</p>
+            ${params.channels.length > 0
+              ? channelRows
+              : `<p style="font-size:14px;color:#A0AEC0;font-style:italic;margin:0;">No channels specified</p>`}
+          </div>
+
+          <div style="background:#F7FAFC;border:1px solid #E2E8F0;border-radius:8px;padding:20px;margin-bottom:24px;">
+            <p style="font-size:12px;text-transform:uppercase;letter-spacing:0.5px;color:#718096;margin:0 0 8px;font-weight:600;">Main Contact</p>
+            <p style="font-size:14px;color:#2D3748;margin:0;line-height:1.6;">
+              ${params.contactName}<br/>
+              <a href="mailto:${params.contactEmail}" style="color:#7CC042;">${params.contactEmail}</a>
+            </p>
+          </div>
+
+          <p style="font-size:14px;color:#4A5568;margin:0 0 8px;line-height:1.6;">
+            An email has been sent to this client to welcome them. Please reach out to the main contact directly to begin set up.
+          </p>
+
+          <p style="font-size:14px;color:#4A5568;margin:24px 0 0;line-height:1.6;">
+            Thank you<br/>
+            <strong>iRam Onboarding</strong>
+          </p>
+
+          <div style="margin-top:32px;padding-top:20px;border-top:1px solid #E2E8F0;text-align:center;">
+            <p style="font-size:12px;color:#A0AEC0;margin:0;">Powered by <strong style="color:#718096;">OuterJoin</strong></p>
+          </div>
+        </div>
+      </div>
+    `,
+  });
+}
+
 export async function sendPasswordResetEmail(params: {
   to: string;
   name: string;
