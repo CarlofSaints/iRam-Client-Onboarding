@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useMemo } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { authFetch } from "@/lib/useAuth";
 import type { Client, Channel, CAM } from "@/lib/types";
 
@@ -37,6 +38,7 @@ function statusBadge(status: Client["status"]) {
 }
 
 export default function ClientsPage() {
+  const router = useRouter();
   const [clients, setClients] = useState<Client[]>([]);
   const [channels, setChannels] = useState<Channel[]>([]);
   const [cams, setCams] = useState<CAM[]>([]);
@@ -223,9 +225,7 @@ export default function ClientsPage() {
                   <tr
                     key={client.id}
                     className="border-b border-gray-50 hover:bg-gray-50/50 transition-colors cursor-pointer"
-                    onClick={() =>
-                      alert("Client detail page coming in Phase 2")
-                    }
+                    onClick={() => router.push(`/clients/${client.id}`)}
                   >
                     <td className="px-4 py-3">
                       <div className="flex items-center gap-2">
