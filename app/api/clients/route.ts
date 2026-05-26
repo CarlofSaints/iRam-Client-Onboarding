@@ -81,43 +81,40 @@ export async function POST(req: NextRequest) {
       status: "success",
     });
 
-    // Send CAM notification email (non-blocking — don't fail client creation if email fails)
+    // Send CAM notification email — must await before returning or serverless kills it
     const camEmailAddr = client.camEmail;
     if (camEmailAddr) {
-      (async () => {
-        try {
-          // Load channels, services, and CAM data to resolve names
-          const [allChannels, allServices, allCams] = await Promise.all([
-            readJson<Channel[]>("channels.json", []),
-            readJson<Service[]>("services.json", []),
-            readJson<CAM[]>("cams.json", []),
-          ]);
+      try {
+        const [allChannels, allServices, allCams] = await Promise.all([
+          readJson<Channel[]>("channels.json", []),
+          readJson<Service[]>("services.json", []),
+          readJson<CAM[]>("cams.json", []),
+        ]);
 
-          const channelMap = new Map(allChannels.map((c) => [c.id, c.name]));
-          const serviceMap = new Map(allServices.map((s) => [s.id, s.name]));
-          const cam = allCams.find((c) => c.id === client.camId);
-          const camName = cam ? `${cam.name} ${cam.surname}` : "Team";
+        const channelMap = new Map(allChannels.map((c) => [c.id, c.name]));
+        const serviceMap = new Map(allServices.map((s) => [s.id, s.name]));
+        const cam = allCams.find((c) => c.id === client.camId);
+        const camName = cam ? `${cam.name} ${cam.surname}` : "Team";
 
-          const channels = (client.channelIds || []).map((chId) => {
-            const svcIds = client.channelServices[chId] || [];
-            return {
-              name: channelMap.get(chId) ?? "Unknown Channel",
-              services: svcIds.map((sId) => serviceMap.get(sId) ?? sId),
-            };
-          });
+        const channelsWithServices = (client.channelIds || []).map((chId) => {
+          const svcIds = client.channelServices[chId] || [];
+          return {
+            name: channelMap.get(chId) ?? "Unknown Channel",
+            services: svcIds.map((sId) => serviceMap.get(sId) ?? sId),
+          };
+        });
 
-          await sendCamNotificationEmail({
-            to: camEmailAddr,
-            camName,
-            clientName: client.name,
-            channels,
-            contactName: client.contactName,
-            contactEmail: client.emails[0] || "",
-          });
-        } catch (err) {
-          console.error("Failed to send CAM notification email:", err);
-        }
-      })();
+        await sendCamNotificationEmail({
+          to: camEmailAddr,
+          camName,
+          clientName: client.name,
+          channels: channelsWithServices,
+          contactName: client.contactName,
+          contactEmail: client.emails[0] || "",
+        });
+      } catch (err) {
+        console.error("Failed to send CAM notification email:", err);
+      }
     }
 
     return Response.json(client, { status: 201, headers: noCacheHeaders() });
