@@ -1,32 +1,21 @@
 "use client";
 
-import { useState, FormEvent, useEffect } from "react";
-import { useRouter } from "next/navigation";
+import { useState, useRef, FormEvent } from "react";
 import { useAuth, authFetch } from "@/lib/useAuth";
 import PasswordInput from "@/components/PasswordInput";
 import { getRoleLabel } from "@/lib/roles";
 
 export default function AccountPage() {
   const { user, login } = useAuth();
-  const router = useRouter();
   const [currentPassword, setCurrentPassword] = useState("");
   const [newPassword, setNewPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
   const [saving, setSaving] = useState(false);
+  const redirecting = useRef(false);
 
   const isForced = !!user?.forcePasswordChange;
-
-  // Redirect to dashboard after forced password change success
-  useEffect(() => {
-    if (success && isForced) {
-      const timer = setTimeout(() => {
-        router.push("/");
-      }, 2000);
-      return () => clearTimeout(timer);
-    }
-  }, [success, isForced, router]);
 
   async function handleSubmit(e: FormEvent) {
     e.preventDefault();
@@ -45,6 +34,9 @@ export default function AccountPage() {
 
     setSaving(true);
     try {
+      // Capture forced state before login() flips it
+      const wasForced = isForced;
+
       const res = await authFetch("/api/auth/change-password", {
         method: "POST",
         body: JSON.stringify({ currentPassword, newPassword }),
@@ -70,6 +62,15 @@ export default function AccountPage() {
       setCurrentPassword("");
       setNewPassword("");
       setConfirmPassword("");
+
+      // If this was a forced password change, redirect after a brief delay
+      if (wasForced && !redirecting.current) {
+        redirecting.current = true;
+        setTimeout(() => {
+          // Full page reload so AppShell re-reads updated localStorage
+          window.location.href = "/";
+        }, 2000);
+      }
     } catch {
       setError("Network error. Please try again.");
     } finally {
@@ -155,7 +156,7 @@ export default function AccountPage() {
           {success && (
             <div className="rounded-lg border border-green-200 bg-green-50 px-4 py-3 text-sm text-green-700">
               {success}
-              {isForced && (
+              {redirecting.current && (
                 <span className="block mt-1 text-xs text-green-600">
                   Redirecting to dashboard...
                 </span>
