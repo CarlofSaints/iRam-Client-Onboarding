@@ -1,19 +1,64 @@
 "use client";
 
-import { useState, FormEvent } from "react";
-import { useRouter } from "next/navigation";
+import { useState, FormEvent, useEffect, Suspense } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import Image from "next/image";
 import PasswordInput from "@/components/PasswordInput";
 import { useAuth } from "@/lib/useAuth";
 
-export default function LoginPage() {
+function LoginInner() {
   const router = useRouter();
-  const { login } = useAuth();
+  const searchParams = useSearchParams();
+  const isLocal = searchParams.get("local") === "true";
+  const { login, user } = useAuth();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
 
+  // SSO auto-redirect (unless ?local=true)
+  useEffect(() => {
+    if (isLocal) return;
+
+    // Already logged in — redirect home
+    if (user) {
+      if (user.forcePasswordChange) router.replace("/account");
+      else router.replace("/");
+      return;
+    }
+
+    const hubUrl =
+      process.env.NEXT_PUBLIC_IRAM_HUB_URL || "https://iram-hub.vercel.app";
+    const callback = `${window.location.origin}/sso/callback`;
+    window.location.href = `${hubUrl}/login?redirect=${encodeURIComponent(callback)}&module=iram-client-onboarding`;
+  }, [isLocal, router, user]);
+
+  // If SSO mode, show redirect message
+  if (!isLocal) {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-zinc-50">
+        <div className="text-center">
+          <div className="mb-4 text-sm text-[var(--color-text-muted)]">
+            Redirecting to iRam Hub...
+          </div>
+          <button
+            onClick={() => {
+              const hubUrl =
+                process.env.NEXT_PUBLIC_IRAM_HUB_URL ||
+                "https://iram-hub.vercel.app";
+              const callback = `${window.location.origin}/sso/callback`;
+              window.location.href = `${hubUrl}/login?redirect=${encodeURIComponent(callback)}&module=iram-client-onboarding`;
+            }}
+            className="text-sm text-[var(--color-primary)] hover:underline"
+          >
+            Click here if not redirected
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  // Local login form (emergency backdoor via ?local=true)
   async function handleSubmit(e: FormEvent) {
     e.preventDefault();
     setError("");
@@ -69,6 +114,11 @@ export default function LoginPage() {
           <p className="mt-1 text-sm text-white/80">OuterJoin</p>
         </div>
 
+        {/* Emergency local login notice */}
+        <div className="border-x border-amber-200 bg-amber-50 px-4 py-2 text-center text-xs text-amber-700">
+          Emergency local login — normal access is via iRam Hub
+        </div>
+
         {/* Form card */}
         <div className="rounded-b-xl border border-t-0 border-[var(--color-border)] bg-white px-8 py-8">
           <form onSubmit={handleSubmit} className="space-y-5">
@@ -117,7 +167,7 @@ export default function LoginPage() {
             <button
               type="submit"
               disabled={loading}
-              className="w-full rounded-lg bg-[var(--color-primary)] px-4 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-[var(--color-primary-dark)] disabled:opacity-50 disabled:cursor-not-allowed"
+              className="w-full rounded-lg bg-[var(--color-primary)] px-4 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-[var(--color-primary-dark)] disabled:cursor-not-allowed disabled:opacity-50"
             >
               {loading ? "Signing in..." : "Sign In"}
             </button>
@@ -126,7 +176,7 @@ export default function LoginPage() {
           <div className="mt-6 text-center">
             <a
               href="/forgot-password"
-              className="text-sm text-[var(--color-text-muted)] hover:text-[var(--color-primary)] transition-colors"
+              className="text-sm text-[var(--color-text-muted)] transition-colors hover:text-[var(--color-primary)]"
             >
               Forgot password?
             </a>
@@ -138,5 +188,19 @@ export default function LoginPage() {
         </p>
       </div>
     </div>
+  );
+}
+
+export default function LoginPage() {
+  return (
+    <Suspense
+      fallback={
+        <div className="flex min-h-screen items-center justify-center bg-zinc-50">
+          <div className="text-sm text-zinc-400">Loading...</div>
+        </div>
+      }
+    >
+      <LoginInner />
+    </Suspense>
   );
 }
