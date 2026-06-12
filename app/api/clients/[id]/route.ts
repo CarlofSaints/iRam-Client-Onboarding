@@ -45,8 +45,11 @@ export async function PUT(
       );
     }
 
-    const { name, status, contactName, emails, website, camId, camEmail } =
-      body as Partial<Client>;
+    const {
+      name, status, contactName, emails, website,
+      camId, camEmail, channelCams,
+      commissionMechanism, commissionSellInPct, commissionSellOutPct,
+    } = body as Partial<Client>;
 
     if (name !== undefined) clients[idx].name = name.trim();
     if (status !== undefined) clients[idx].status = status;
@@ -55,6 +58,10 @@ export async function PUT(
     if (website !== undefined) clients[idx].website = website?.trim() || undefined;
     if (camId !== undefined) clients[idx].camId = camId;
     if (camEmail !== undefined) clients[idx].camEmail = camEmail?.trim() || undefined;
+    if (channelCams !== undefined) clients[idx].channelCams = channelCams;
+    if (commissionMechanism !== undefined) clients[idx].commissionMechanism = commissionMechanism;
+    if (commissionSellInPct !== undefined) clients[idx].commissionSellInPct = commissionSellInPct;
+    if (commissionSellOutPct !== undefined) clients[idx].commissionSellOutPct = commissionSellOutPct;
 
     await writeJson(BLOB_KEY, clients);
 

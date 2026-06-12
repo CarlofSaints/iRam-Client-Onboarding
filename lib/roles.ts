@@ -1,4 +1,5 @@
-import type { UserRole, PermissionKey, PermissionDef, RolePermissions } from "./types";
+import type { PermissionKey, PermissionDef, RolePermissions } from "./types";
+import { SYSTEM_ROLES } from "./types";
 
 export const ALL_PERMISSIONS: PermissionDef[] = [
   // Admin
@@ -58,30 +59,32 @@ export const DEFAULT_ROLE_PERMISSIONS: RolePermissions[] = [
   },
 ];
 
-export const ROLE_LABELS: Record<UserRole, string> = {
+const SYSTEM_ROLE_LABELS: Record<string, string> = {
   super_admin: "Super Admin",
   admin: "Admin",
   cam: "CAM",
   sales_person: "Sales Person",
 };
 
-export function getRoleLabel(role: UserRole): string {
-  return ROLE_LABELS[role] ?? role;
+export const ROLE_LABELS = SYSTEM_ROLE_LABELS;
+
+export function getRoleLabel(role: string): string {
+  return SYSTEM_ROLE_LABELS[role] ?? role;
 }
 
-export function isRoleAtLeast(role: UserRole, minRole: UserRole): boolean {
-  const hierarchy: UserRole[] = [
-    "super_admin",
-    "admin",
-    "cam",
-    "sales_person",
-  ];
-  return hierarchy.indexOf(role) <= hierarchy.indexOf(minRole);
+export function isRoleAtLeast(role: string, minRole: string): boolean {
+  const hierarchy = [...SYSTEM_ROLES];
+  const roleIdx = hierarchy.indexOf(role as typeof SYSTEM_ROLES[number]);
+  const minIdx = hierarchy.indexOf(minRole as typeof SYSTEM_ROLES[number]);
+  // Unknown roles are treated as lowest privilege (after sales_person)
+  const effectiveRole = roleIdx === -1 ? hierarchy.length : roleIdx;
+  const effectiveMin = minIdx === -1 ? hierarchy.length : minIdx;
+  return effectiveRole <= effectiveMin;
 }
 
 export function hasPermission(
   rolePerms: RolePermissions[],
-  role: UserRole,
+  role: string,
   perm: PermissionKey
 ): boolean {
   if (role === "super_admin") return true;

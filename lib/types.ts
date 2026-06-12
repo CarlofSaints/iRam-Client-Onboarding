@@ -4,14 +4,22 @@
 
 // ── Roles ──
 
-export type UserRole = "super_admin" | "admin" | "cam" | "sales_person";
+export type UserRole = "super_admin" | "admin" | "cam" | "sales_person" | (string & {});
 
-export const ROLE_HIERARCHY: UserRole[] = [
+export const SYSTEM_ROLES = ["super_admin", "admin", "cam", "sales_person"] as const;
+
+export const ROLE_HIERARCHY: string[] = [
   "super_admin",
   "admin",
   "cam",
   "sales_person",
 ];
+
+export interface CustomRole {
+  slug: string;
+  name: string;
+  createdAt: string; // ISO
+}
 
 // ── Permissions ──
 
@@ -37,7 +45,7 @@ export interface PermissionDef {
 }
 
 export interface RolePermissions {
-  role: UserRole;
+  role: string;
   permissions: PermissionKey[];
 }
 
@@ -48,7 +56,7 @@ export interface User {
   name: string;
   email: string;
   password: string; // bcrypt hash
-  role: UserRole;
+  role: string;
   forcePasswordChange: boolean;
   active: boolean;
   createdAt: string; // ISO
@@ -59,7 +67,7 @@ export interface SessionPayload {
   userId: string;
   email: string;
   name: string;
-  role: UserRole;
+  role: string;
   forcePasswordChange?: boolean;
 }
 
@@ -101,6 +109,7 @@ export interface CAM {
   cell: string;
   active: boolean;
   createdAt: string; // ISO
+  userId?: string; // linked system user ID (auto-created)
 }
 
 // ── Legal Templates ──
@@ -146,8 +155,9 @@ export interface Client {
   name: string;
   logoBase64?: string;
   website?: string;
-  camId: string;
-  camEmail?: string;
+  camId?: string; // Deprecated — kept for backward compat
+  camEmail?: string; // Deprecated — kept for backward compat
+  channelCams?: Record<string, string>; // channelId → camId (per-channel CAM)
   channelIds: string[];
   channelServices: Record<string, string[]>; // channelId → serviceId[]
   contactName: string;
@@ -156,10 +166,16 @@ export interface Client {
   status: "intake" | "active" | "live";
   checklist: Record<string, ChecklistItemState>;
   createdAt: string; // ISO
-  // Infrastructure status (Phase 2 stubs)
+  // Commission
+  commissionMechanism?: "sell_in" | "sell_out" | "combination";
+  commissionSellInPct?: number;
+  commissionSellOutPct?: number;
+  // Infrastructure provisioning status
   sharepointStatus?: "pending" | "done" | "error";
+  sharepointError?: string;
   teamsStatus?: "pending" | "done" | "error";
   dropboxStatus?: "pending" | "done" | "error";
+  dropboxError?: string;
 }
 
 // ── Activity Log ──

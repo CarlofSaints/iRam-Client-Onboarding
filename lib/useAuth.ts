@@ -1,7 +1,8 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
-import type { SessionPayload, UserRole } from "./types";
+import type { SessionPayload } from "./types";
+import { SYSTEM_ROLES } from "./types";
 
 interface AuthState {
   user: SessionPayload | null;
@@ -45,15 +46,14 @@ export function useAuth() {
   }, []);
 
   const hasRole = useCallback(
-    (minRole: UserRole): boolean => {
+    (minRole: string): boolean => {
       if (!state.user) return false;
-      const hierarchy: UserRole[] = [
-        "super_admin",
-        "admin",
-        "cam",
-        "sales_person",
-      ];
-      return hierarchy.indexOf(state.user.role) <= hierarchy.indexOf(minRole);
+      const hierarchy = [...SYSTEM_ROLES];
+      const roleIdx = hierarchy.indexOf(state.user.role as typeof SYSTEM_ROLES[number]);
+      const minIdx = hierarchy.indexOf(minRole as typeof SYSTEM_ROLES[number]);
+      const effectiveRole = roleIdx === -1 ? hierarchy.length : roleIdx;
+      const effectiveMin = minIdx === -1 ? hierarchy.length : minIdx;
+      return effectiveRole <= effectiveMin;
     },
     [state.user]
   );

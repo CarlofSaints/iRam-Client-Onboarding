@@ -9,7 +9,7 @@ import {
   deleteUser,
 } from "@/lib/userData";
 import { sendWelcomeEmail } from "@/lib/email";
-import type { User, UserRole } from "@/lib/types";
+import type { User } from "@/lib/types";
 
 function stripPassword(user: User): Omit<User, "password"> {
   const { password: _, ...safe } = user;
@@ -37,7 +37,7 @@ export async function POST(req: NextRequest) {
         name: string;
         email: string;
         password: string;
-        role: UserRole;
+        role: string;
         forcePasswordChange: boolean;
         sendWelcome?: boolean;
       };
@@ -97,7 +97,7 @@ export async function PUT(req: NextRequest) {
         id: string;
         name?: string;
         email?: string;
-        role?: UserRole;
+        role?: string;
         active?: boolean;
         forcePasswordChange?: boolean;
         newPassword?: string;

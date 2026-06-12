@@ -1,5 +1,6 @@
 import { NextRequest } from "next/server";
-import type { SessionPayload, UserRole, PermissionKey } from "./types";
+import type { SessionPayload, PermissionKey } from "./types";
+import { SYSTEM_ROLES } from "./types";
 import { getRolePermissions } from "./roleData";
 import { hasPermission } from "./roles";
 
@@ -40,16 +41,16 @@ export function requireLogin(req: NextRequest): SessionPayload {
 
 export function requireRole(
   req: NextRequest,
-  minRole: UserRole
+  minRole: string
 ): SessionPayload {
   const session = requireLogin(req);
-  const hierarchy: UserRole[] = [
-    "super_admin",
-    "admin",
-    "cam",
-    "sales_person",
-  ];
-  if (hierarchy.indexOf(session.role) > hierarchy.indexOf(minRole)) {
+  const hierarchy = [...SYSTEM_ROLES];
+  const roleIdx = hierarchy.indexOf(session.role as typeof SYSTEM_ROLES[number]);
+  const minIdx = hierarchy.indexOf(minRole as typeof SYSTEM_ROLES[number]);
+  // Unknown roles get index = hierarchy.length (lowest privilege)
+  const effectiveRole = roleIdx === -1 ? hierarchy.length : roleIdx;
+  const effectiveMin = minIdx === -1 ? hierarchy.length : minIdx;
+  if (effectiveRole > effectiveMin) {
     throw new AuthError("Insufficient permissions", 403);
   }
   return session;

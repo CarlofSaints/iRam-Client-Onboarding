@@ -4,6 +4,9 @@ import { addLog } from "@/lib/activityLog";
 import { getRolePermissions, saveRolePermissions } from "@/lib/roleData";
 import type { RolePermissions } from "@/lib/types";
 
+// Note: RolePermissions.role is now string (not just UserRole),
+// so custom roles are accepted automatically.
+
 export async function GET(req: NextRequest) {
   try {
     await requireRole(req, "super_admin");

@@ -3,9 +3,20 @@ import { v4 as uuid } from "uuid";
 import { readJson, writeJson } from "@/lib/blob";
 import { requirePermission, handleAuthError, noCacheHeaders } from "@/lib/auth";
 import { addLog } from "@/lib/activityLog";
+import { createUser, getUserByEmail } from "@/lib/userData";
+import { sendWelcomeEmail } from "@/lib/email";
 import type { CAM } from "@/lib/types";
 
 const BLOB_KEY = "cams.json";
+
+function generateTempPassword(length = 8): string {
+  const chars = "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghjkmnpqrstuvwxyz23456789";
+  let pwd = "";
+  for (let i = 0; i < length; i++) {
+    pwd += chars[Math.floor(Math.random() * chars.length)];
+  }
+  return pwd;
+}
 
 export async function GET(req: NextRequest) {
   try {
@@ -45,6 +56,44 @@ export async function POST(req: NextRequest) {
       active: true,
       createdAt: new Date().toISOString(),
     };
+
+    // Auto-create a user account for this CAM
+    const camEmail = cam.email;
+    const existing = await getUserByEmail(camEmail);
+    if (!existing) {
+      const tempPassword = generateTempPassword();
+      try {
+        const user = await createUser({
+          name: `${cam.name} ${cam.surname}`,
+          email: camEmail,
+          password: tempPassword,
+          role: "cam",
+          forcePasswordChange: true,
+        });
+        cam.userId = user.id;
+
+        // Send welcome email with temp password
+        try {
+          await sendWelcomeEmail({
+            to: camEmail,
+            name: `${cam.name} ${cam.surname}`,
+            email: camEmail,
+            password: tempPassword,
+            forcePasswordChange: true,
+          });
+        } catch (emailErr) {
+          console.error("Failed to send CAM welcome email:", emailErr);
+        }
+      } catch (createErr) {
+        // User creation failed (e.g. email already taken by race condition)
+        // Still create the CAM, just without linked user
+        console.error("Failed to auto-create user for CAM:", createErr);
+      }
+    } else {
+      // User already exists — link them
+      cam.userId = existing.id;
+    }
+
     cams.push(cam);
     await writeJson(BLOB_KEY, cams);
 
@@ -52,7 +101,7 @@ export async function POST(req: NextRequest) {
       userId: session.userId,
       userName: session.name,
       action: "Created CAM",
-      details: `${cam.name} ${cam.surname}`,
+      details: `${cam.name} ${cam.surname}${cam.userId ? " (user auto-created)" : ""}`,
       status: "success",
     });
 

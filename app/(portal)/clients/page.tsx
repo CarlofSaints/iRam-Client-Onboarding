@@ -102,8 +102,18 @@ export default function ClientsPage() {
       .join(", ");
   }
 
-  function getCamName(camId: string): string {
-    return camMap.get(camId) ?? "--";
+  function getClientCamNames(client: Client): string {
+    // New format: per-channel CAMs
+    if (client.channelCams && Object.keys(client.channelCams).length > 0) {
+      const uniqueCamIds = [...new Set(Object.values(client.channelCams))];
+      const names = uniqueCamIds.map((id) => camMap.get(id)).filter(Boolean);
+      return names.length > 0 ? names.join(", ") : "--";
+    }
+    // Legacy format: single camId
+    if (client.camId) {
+      return camMap.get(client.camId) ?? "--";
+    }
+    return "--";
   }
 
   if (loading) {
@@ -247,7 +257,7 @@ export default function ClientsPage() {
                       </div>
                     </td>
                     <td className="px-4 py-3 text-gray-600">
-                      {getCamName(client.camId)}
+                      {getClientCamNames(client)}
                     </td>
                     <td className="px-4 py-3">
                       {statusBadge(client.status)}

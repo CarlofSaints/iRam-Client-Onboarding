@@ -26,29 +26,33 @@ export async function POST(req: NextRequest) {
       name,
       logoBase64,
       website,
-      camId,
-      camEmail,
+      channelCams,
       channelIds,
       channelServices,
       contactName,
       emails,
       startDate,
+      commissionMechanism,
+      commissionSellInPct,
+      commissionSellOutPct,
     } = body as {
       name: string;
       logoBase64?: string;
       website?: string;
-      camId: string;
-      camEmail?: string;
+      channelCams: Record<string, string>;
       channelIds: string[];
       channelServices: Record<string, string[]>;
       contactName: string;
       emails: string[];
       startDate: string;
+      commissionMechanism?: "sell_in" | "sell_out" | "combination";
+      commissionSellInPct?: number;
+      commissionSellOutPct?: number;
     };
 
-    if (!name?.trim() || !camId || !contactName?.trim() || !startDate) {
+    if (!name?.trim() || !contactName?.trim() || !startDate) {
       return Response.json(
-        { error: "Name, camId, contactName, and startDate are required" },
+        { error: "Name, contactName, and startDate are required" },
         { status: 400, headers: noCacheHeaders() }
       );
     }
@@ -59,8 +63,7 @@ export async function POST(req: NextRequest) {
       name: name.trim(),
       logoBase64: logoBase64 || undefined,
       website: website?.trim() || undefined,
-      camId,
-      camEmail: camEmail?.trim().toLowerCase() || undefined,
+      channelCams: channelCams || {},
       channelIds: channelIds || [],
       channelServices: channelServices || {},
       contactName: contactName.trim(),
@@ -69,6 +72,11 @@ export async function POST(req: NextRequest) {
       status: "intake",
       checklist: {},
       createdAt: new Date().toISOString(),
+      commissionMechanism: commissionMechanism || undefined,
+      commissionSellInPct:
+        commissionSellInPct != null ? commissionSellInPct : undefined,
+      commissionSellOutPct:
+        commissionSellOutPct != null ? commissionSellOutPct : undefined,
     };
     clients.push(client);
     await writeJson(BLOB_KEY, clients);
@@ -81,9 +89,11 @@ export async function POST(req: NextRequest) {
       status: "success",
     });
 
-    // Send CAM notification email — must await before returning or serverless kills it
-    const camEmailAddr = client.camEmail;
-    if (camEmailAddr) {
+    // Send per-CAM notification emails
+    const camMap = client.channelCams || {};
+    const uniqueCamIds = [...new Set(Object.values(camMap))];
+
+    if (uniqueCamIds.length > 0) {
       try {
         const [allChannels, allServices, allCams] = await Promise.all([
           readJson<Channel[]>("channels.json", []),
@@ -93,27 +103,47 @@ export async function POST(req: NextRequest) {
 
         const channelMap = new Map(allChannels.map((c) => [c.id, c.name]));
         const serviceMap = new Map(allServices.map((s) => [s.id, s.name]));
-        const cam = allCams.find((c) => c.id === client.camId);
-        const camName = cam ? `${cam.name} ${cam.surname}` : "Team";
 
-        const channelsWithServices = (client.channelIds || []).map((chId) => {
-          const svcIds = client.channelServices[chId] || [];
-          return {
-            name: channelMap.get(chId) ?? "Unknown Channel",
-            services: svcIds.map((sId) => serviceMap.get(sId) ?? sId),
-          };
-        });
+        // Group channels by CAM: camId → channelIds[]
+        const camToChannels: Record<string, string[]> = {};
+        for (const [channelId, camId] of Object.entries(camMap)) {
+          if (!camToChannels[camId]) camToChannels[camId] = [];
+          camToChannels[camId].push(channelId);
+        }
 
-        await sendCamNotificationEmail({
-          to: camEmailAddr,
-          camName,
-          clientName: client.name,
-          channels: channelsWithServices,
-          contactName: client.contactName,
-          contactEmail: client.emails[0] || "",
-        });
+        // Send one email per unique CAM with only their channels
+        for (const camId of uniqueCamIds) {
+          const cam = allCams.find((c) => c.id === camId);
+          if (!cam?.email) continue;
+
+          const camName = `${cam.name} ${cam.surname}`;
+          const camChannelIds = camToChannels[camId] || [];
+          const channelsWithServices = camChannelIds.map((chId) => {
+            const svcIds = client.channelServices[chId] || [];
+            return {
+              name: channelMap.get(chId) ?? "Unknown Channel",
+              services: svcIds.map((sId) => serviceMap.get(sId) ?? sId),
+            };
+          });
+
+          try {
+            await sendCamNotificationEmail({
+              to: cam.email,
+              camName,
+              clientName: client.name,
+              channels: channelsWithServices,
+              contactName: client.contactName,
+              contactEmail: client.emails[0] || "",
+            });
+          } catch (err) {
+            console.error(
+              `Failed to send CAM notification to ${cam.email}:`,
+              err
+            );
+          }
+        }
       } catch (err) {
-        console.error("Failed to send CAM notification email:", err);
+        console.error("Failed to send CAM notification emails:", err);
       }
     }
 

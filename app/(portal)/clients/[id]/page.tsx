@@ -56,6 +56,11 @@ export default function ClientDetailPage() {
   const [saving, setSaving] = useState<string | null>(null);
   const [error, setError] = useState("");
 
+  // Infrastructure provisioning
+  const [spLoading, setSpLoading] = useState(false);
+  const [dbxLoading, setDbxLoading] = useState(false);
+  const [infraMsg, setInfraMsg] = useState<{ text: string; type: "success" | "error" } | null>(null);
+
   const loadData = useCallback(async () => {
     try {
       const [clientRes, defsRes, chRes, svcRes, camRes] = await Promise.all([
@@ -102,8 +107,23 @@ export default function ClientDetailPage() {
 
   const camName = useMemo(() => {
     if (!client) return "";
-    const cam = cams.find((c) => c.id === client.camId);
-    return cam ? `${cam.name} ${cam.surname}` : "--";
+    // New format: per-channel CAMs — show unique names
+    if (client.channelCams && Object.keys(client.channelCams).length > 0) {
+      const uniqueCamIds = [...new Set(Object.values(client.channelCams))];
+      const names = uniqueCamIds
+        .map((id) => {
+          const cam = cams.find((c) => c.id === id);
+          return cam ? `${cam.name} ${cam.surname}` : null;
+        })
+        .filter(Boolean);
+      return names.length > 0 ? names.join(", ") : "--";
+    }
+    // Legacy format: single camId
+    if (client.camId) {
+      const cam = cams.find((c) => c.id === client.camId);
+      return cam ? `${cam.name} ${cam.surname}` : "--";
+    }
+    return "--";
   }, [cams, client]);
 
   // Active checklist defs grouped by section, ordered by step
@@ -179,6 +199,47 @@ export default function ClientDetailPage() {
       }
     } catch {
       // silently fail
+    }
+  }
+
+  async function handleCreateSP() {
+    setSpLoading(true);
+    setInfraMsg(null);
+    try {
+      const res = await authFetch(`/api/clients/${id}/sharepoint`, { method: "POST" });
+      const data = await res.json();
+      if (!res.ok) {
+        setInfraMsg({ text: data.error ?? "SharePoint folder creation failed", type: "error" });
+      } else {
+        setInfraMsg({ text: `SharePoint folder created: ${data.folder}`, type: "success" });
+      }
+      await loadData();
+    } catch (err) {
+      setInfraMsg({ text: String(err), type: "error" });
+    } finally {
+      setSpLoading(false);
+    }
+  }
+
+  async function handleCreateDropbox() {
+    setDbxLoading(true);
+    setInfraMsg(null);
+    try {
+      const res = await authFetch(`/api/clients/${id}/dropbox`, { method: "POST" });
+      const data = await res.json();
+      if (!res.ok) {
+        setInfraMsg({ text: data.error ?? "Dropbox folder creation failed", type: "error" });
+      } else {
+        setInfraMsg({
+          text: `Dropbox folder created. ${data.filesCopied} template file(s) copied.`,
+          type: "success",
+        });
+      }
+      await loadData();
+    } catch (err) {
+      setInfraMsg({ text: String(err), type: "error" });
+    } finally {
+      setDbxLoading(false);
     }
   }
 
@@ -336,6 +397,101 @@ export default function ClientDetailPage() {
           </div>
         </div>
       )}
+
+      {/* Infrastructure provisioning */}
+      <section className="bg-white rounded-xl shadow-sm border border-gray-100 p-6">
+        <h2 className="text-sm font-bold text-gray-700 uppercase tracking-wide mb-4">
+          Infrastructure
+        </h2>
+        {infraMsg && (
+          <div
+            className={`mb-3 px-3 py-2 rounded-lg text-xs ${
+              infraMsg.type === "success"
+                ? "bg-emerald-50 text-emerald-700"
+                : "bg-red-50 text-red-700"
+            }`}
+          >
+            {infraMsg.text}
+          </div>
+        )}
+        <div className="space-y-3">
+          {/* SharePoint row */}
+          <div className="flex items-center justify-between py-2 px-3 rounded-lg bg-gray-50">
+            <div className="flex items-center gap-3">
+              <span className="text-sm font-medium text-gray-700">SharePoint Folder</span>
+              {client.sharepointStatus === "done" && (
+                <span className="inline-flex items-center gap-1 text-xs font-medium text-emerald-700 bg-emerald-100 px-2 py-0.5 rounded-full">
+                  <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                  </svg>
+                  Created
+                </span>
+              )}
+              {client.sharepointStatus === "error" && (
+                <span className="text-xs text-red-600 max-w-xs truncate" title={client.sharepointError}>
+                  Error: {client.sharepointError}
+                </span>
+              )}
+              {spLoading && (
+                <span className="inline-flex items-center gap-1 text-xs text-gray-500">
+                  <svg className="animate-spin w-3.5 h-3.5" fill="none" viewBox="0 0 24 24">
+                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+                  </svg>
+                  Creating…
+                </span>
+              )}
+            </div>
+            {client.sharepointStatus !== "done" && (
+              <button
+                onClick={handleCreateSP}
+                disabled={spLoading}
+                className="px-4 py-1.5 text-xs font-bold rounded-lg bg-[#3D6273] hover:bg-[#2f4d5a] text-white disabled:opacity-50 transition-colors"
+              >
+                {client.sharepointStatus === "error" ? "Retry" : "Create SharePoint Folder"}
+              </button>
+            )}
+          </div>
+
+          {/* Dropbox row */}
+          <div className="flex items-center justify-between py-2 px-3 rounded-lg bg-gray-50">
+            <div className="flex items-center gap-3">
+              <span className="text-sm font-medium text-gray-700">Dropbox Folder</span>
+              {client.dropboxStatus === "done" && (
+                <span className="inline-flex items-center gap-1 text-xs font-medium text-emerald-700 bg-emerald-100 px-2 py-0.5 rounded-full">
+                  <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                  </svg>
+                  Created
+                </span>
+              )}
+              {client.dropboxStatus === "error" && (
+                <span className="text-xs text-red-600 max-w-xs truncate" title={client.dropboxError}>
+                  Error: {client.dropboxError}
+                </span>
+              )}
+              {dbxLoading && (
+                <span className="inline-flex items-center gap-1 text-xs text-gray-500">
+                  <svg className="animate-spin w-3.5 h-3.5" fill="none" viewBox="0 0 24 24">
+                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+                  </svg>
+                  Creating…
+                </span>
+              )}
+            </div>
+            {client.dropboxStatus !== "done" && (
+              <button
+                onClick={handleCreateDropbox}
+                disabled={dbxLoading}
+                className="px-4 py-1.5 text-xs font-bold rounded-lg bg-[#3D6273] hover:bg-[#2f4d5a] text-white disabled:opacity-50 transition-colors"
+              >
+                {client.dropboxStatus === "error" ? "Retry" : "Create Dropbox Folder"}
+              </button>
+            )}
+          </div>
+        </div>
+      </section>
 
       {/* Checklist sections */}
       {sections.length === 0 ? (

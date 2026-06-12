@@ -2,23 +2,31 @@
 
 import { useState, useEffect, useCallback } from "react";
 import { authFetch } from "@/lib/useAuth";
-import type { User, UserRole } from "@/lib/types";
-import { ROLE_LABELS } from "@/lib/roles";
+import type { User } from "@/lib/types";
+import { getRoleLabel } from "@/lib/roles";
 
-const ROLES: UserRole[] = ["super_admin", "admin", "cam", "sales_person"];
+interface RoleInfo {
+  slug: string;
+  name: string;
+  isSystem: boolean;
+}
 
-const ROLE_BADGE_COLORS: Record<UserRole, string> = {
+const SYSTEM_BADGE_COLORS: Record<string, string> = {
   super_admin: "bg-purple-50 text-purple-700",
   admin: "bg-blue-50 text-blue-700",
   cam: "bg-teal-50 text-teal-700",
   sales_person: "bg-gray-100 text-gray-600",
 };
 
+function roleBadgeColor(role: string): string {
+  return SYSTEM_BADGE_COLORS[role] || "bg-amber-50 text-amber-700";
+}
+
 interface UserForm {
   name: string;
   email: string;
   password: string;
-  role: UserRole;
+  role: string;
   forcePasswordChange: boolean;
   sendWelcomeEmail: boolean;
 }
@@ -44,6 +52,7 @@ function generatePassword(length = 12): string {
 
 export default function UsersPage() {
   const [users, setUsers] = useState<User[]>([]);
+  const [roles, setRoles] = useState<RoleInfo[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [message, setMessage] = useState("");
@@ -58,7 +67,7 @@ export default function UsersPage() {
   const [editForm, setEditForm] = useState({
     name: "",
     email: "",
-    role: "sales_person" as UserRole,
+    role: "sales_person",
     active: true,
     newPassword: "",
   });
@@ -70,13 +79,21 @@ export default function UsersPage() {
     setTimeout(() => setMessage(""), 3000);
   }, []);
 
-  const fetchUsers = useCallback(async () => {
+  const fetchData = useCallback(async () => {
     try {
       setError("");
-      const res = await authFetch("/api/users");
-      if (!res.ok) throw new Error("Failed to load users");
-      const data: User[] = await res.json();
-      setUsers(data);
+      const [usersRes, rolesRes] = await Promise.all([
+        authFetch("/api/users"),
+        authFetch("/api/roles"),
+      ]);
+      if (!usersRes.ok) throw new Error("Failed to load users");
+      const usersData: User[] = await usersRes.json();
+      setUsers(usersData);
+
+      if (rolesRes.ok) {
+        const rolesData: RoleInfo[] = await rolesRes.json();
+        setRoles(rolesData);
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to load users");
     } finally {
@@ -85,8 +102,8 @@ export default function UsersPage() {
   }, []);
 
   useEffect(() => {
-    fetchUsers();
-  }, [fetchUsers]);
+    fetchData();
+  }, [fetchData]);
 
   const handleAdd = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -101,7 +118,7 @@ export default function UsersPage() {
           password: form.password,
           role: form.role,
           forcePasswordChange: form.forcePasswordChange,
-          sendWelcomeEmail: form.sendWelcomeEmail,
+          sendWelcome: form.sendWelcomeEmail,
         }),
       });
       if (!res.ok) {
@@ -148,7 +165,7 @@ export default function UsersPage() {
         role: editForm.role,
         active: editForm.active,
       };
-      if (editForm.newPassword) body.password = editForm.newPassword;
+      if (editForm.newPassword) body.newPassword = editForm.newPassword;
 
       const res = await authFetch("/api/users", {
         method: "PUT",
@@ -194,6 +211,11 @@ export default function UsersPage() {
       hour: "2-digit",
       minute: "2-digit",
     });
+  };
+
+  const displayRoleName = (role: string): string => {
+    const found = roles.find((r) => r.slug === role);
+    return found ? found.name : getRoleLabel(role);
   };
 
   const isAddValid =
@@ -305,19 +327,26 @@ export default function UsersPage() {
                 Generate
               </button>
             </div>
-            {/* Role dropdown */}
+            {/* Role dropdown — dynamic from API */}
             <select
               value={form.role}
-              onChange={(e) =>
-                setForm({ ...form, role: e.target.value as UserRole })
-              }
+              onChange={(e) => setForm({ ...form, role: e.target.value })}
               className="w-full px-3 py-2 border border-gray-200 rounded-lg focus:ring-2 focus:ring-[#7CC042]/30 focus:border-[#7CC042] outline-none bg-white"
             >
-              {ROLES.map((role) => (
-                <option key={role} value={role}>
-                  {ROLE_LABELS[role]}
-                </option>
-              ))}
+              {roles.length > 0 ? (
+                roles.map((role) => (
+                  <option key={role.slug} value={role.slug}>
+                    {role.name}
+                  </option>
+                ))
+              ) : (
+                <>
+                  <option value="super_admin">Super Admin</option>
+                  <option value="admin">Admin</option>
+                  <option value="cam">CAM</option>
+                  <option value="sales_person">Sales Person</option>
+                </>
+              )}
             </select>
           </div>
           <div className="flex flex-wrap gap-6">
@@ -386,18 +415,24 @@ export default function UsersPage() {
               <select
                 value={editForm.role}
                 onChange={(e) =>
-                  setEditForm({
-                    ...editForm,
-                    role: e.target.value as UserRole,
-                  })
+                  setEditForm({ ...editForm, role: e.target.value })
                 }
                 className="w-full px-3 py-2 border border-gray-200 rounded-lg focus:ring-2 focus:ring-[#7CC042]/30 focus:border-[#7CC042] outline-none bg-white"
               >
-                {ROLES.map((role) => (
-                  <option key={role} value={role}>
-                    {ROLE_LABELS[role]}
-                  </option>
-                ))}
+                {roles.length > 0 ? (
+                  roles.map((role) => (
+                    <option key={role.slug} value={role.slug}>
+                      {role.name}
+                    </option>
+                  ))
+                ) : (
+                  <>
+                    <option value="super_admin">Super Admin</option>
+                    <option value="admin">Admin</option>
+                    <option value="cam">CAM</option>
+                    <option value="sales_person">Sales Person</option>
+                  </>
+                )}
               </select>
               <label className="flex items-center gap-2 text-sm text-gray-700 cursor-pointer">
                 <input
@@ -520,9 +555,9 @@ export default function UsersPage() {
                     </td>
                     <td className="px-6 py-4">
                       <span
-                        className={`px-2 py-0.5 rounded-full text-xs font-medium ${ROLE_BADGE_COLORS[user.role]}`}
+                        className={`px-2 py-0.5 rounded-full text-xs font-medium ${roleBadgeColor(user.role)}`}
                       >
-                        {ROLE_LABELS[user.role]}
+                        {displayRoleName(user.role)}
                       </span>
                     </td>
                     <td className="px-6 py-4">

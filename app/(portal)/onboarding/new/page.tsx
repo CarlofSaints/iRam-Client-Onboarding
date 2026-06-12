@@ -9,13 +9,15 @@ interface FormData {
   name: string;
   logoBase64: string;
   website: string;
-  camId: string;
-  camEmail: string;
   contactName: string;
   emails: string[];
   startDate: string;
   channelIds: string[];
   channelServices: Record<string, string[]>;
+  channelCams: Record<string, string>; // channelId → camId
+  commissionMechanism: "" | "sell_in" | "sell_out" | "combination";
+  commissionSellInPct: string;
+  commissionSellOutPct: string;
   sharepoint: boolean;
   teams: boolean;
   dropbox: boolean;
@@ -25,13 +27,15 @@ const EMPTY_FORM: FormData = {
   name: "",
   logoBase64: "",
   website: "",
-  camId: "",
-  camEmail: "",
   contactName: "",
   emails: [""],
   startDate: new Date().toISOString().split("T")[0],
   channelIds: [],
   channelServices: {},
+  channelCams: {},
+  commissionMechanism: "",
+  commissionSellInPct: "",
+  commissionSellOutPct: "",
   sharepoint: true,
   teams: true,
   dropbox: true,
@@ -110,15 +114,6 @@ export default function NewClientPage() {
     []
   );
 
-  function handleCamChange(camId: string) {
-    const cam = cams.find((c) => c.id === camId);
-    setForm((prev) => ({
-      ...prev,
-      camId,
-      camEmail: cam?.email ?? "",
-    }));
-  }
-
   function handleLogoUpload(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -157,8 +152,10 @@ export default function NewClientPage() {
         : [...prev.channelIds, channelId];
 
       const newChannelServices = { ...prev.channelServices };
+      const newChannelCams = { ...prev.channelCams };
       if (isSelected) {
         delete newChannelServices[channelId];
+        delete newChannelCams[channelId];
       } else if (!newChannelServices[channelId]) {
         newChannelServices[channelId] = [];
       }
@@ -167,6 +164,7 @@ export default function NewClientPage() {
         ...prev,
         channelIds: newIds,
         channelServices: newChannelServices,
+        channelCams: newChannelCams,
       };
     });
 
@@ -200,6 +198,16 @@ export default function NewClientPage() {
     });
   }
 
+  function setChannelCam(channelId: string, camId: string) {
+    setForm((prev) => ({
+      ...prev,
+      channelCams: {
+        ...prev.channelCams,
+        [channelId]: camId,
+      },
+    }));
+  }
+
   function toggleExpandChannel(channelId: string) {
     setExpandedChannels((prev) => {
       const next = new Set(prev);
@@ -225,15 +233,20 @@ export default function NewClientPage() {
       setError("Contact name is required.");
       return;
     }
-    if (!form.camId) {
-      setError("Please select a CAM.");
-      return;
-    }
 
     const validEmails = form.emails.filter((e) => e.trim());
     if (validEmails.length === 0) {
       setError("At least one email recipient is required.");
       return;
+    }
+
+    // Validate each selected channel has a CAM assigned
+    for (const channelId of form.channelIds) {
+      if (!form.channelCams[channelId]) {
+        const ch = channels.find((c) => c.id === channelId);
+        setError(`Please assign a CAM for channel "${ch?.name ?? channelId}".`);
+        return;
+      }
     }
 
     setSubmitting(true);
@@ -245,13 +258,19 @@ export default function NewClientPage() {
           name: form.name.trim(),
           logoBase64: form.logoBase64 || undefined,
           website: form.website.trim() || undefined,
-          camId: form.camId,
-          camEmail: form.camEmail.trim() || undefined,
           contactName: form.contactName.trim(),
           emails: validEmails,
           startDate: form.startDate,
           channelIds: form.channelIds,
           channelServices: form.channelServices,
+          channelCams: form.channelCams,
+          commissionMechanism: form.commissionMechanism || undefined,
+          commissionSellInPct: form.commissionSellInPct
+            ? parseFloat(form.commissionSellInPct)
+            : undefined,
+          commissionSellOutPct: form.commissionSellOutPct
+            ? parseFloat(form.commissionSellOutPct)
+            : undefined,
           sharepoint: form.sharepoint,
           teams: form.teams,
           dropbox: form.dropbox,
@@ -447,54 +466,12 @@ export default function NewClientPage() {
           </div>
         </div>
 
-        {/* CAM & Contact Card */}
+        {/* Contact Card (was "CAM & Contact") */}
         <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-6">
           <h2 className="text-base font-semibold text-gray-800 mb-4">
-            CAM & Contact
+            Contact
           </h2>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            {/* CAM Dropdown */}
-            <div>
-              <label
-                htmlFor="cam"
-                className="mb-1.5 block text-sm font-medium text-gray-700"
-              >
-                CAM <span className="text-red-500">*</span>
-              </label>
-              <select
-                id="cam"
-                value={form.camId}
-                onChange={(e) => handleCamChange(e.target.value)}
-                required
-                className="w-full px-3 py-2 border border-gray-200 rounded-lg focus:ring-2 focus:ring-[#7CC042]/30 focus:border-[#7CC042] text-sm bg-white"
-              >
-                <option value="">Select a CAM...</option>
-                {cams.map((cam) => (
-                  <option key={cam.id} value={cam.id}>
-                    {cam.name} {cam.surname}
-                  </option>
-                ))}
-              </select>
-            </div>
-
-            {/* CAM Email (auto-filled, editable) */}
-            <div>
-              <label
-                htmlFor="camEmail"
-                className="mb-1.5 block text-sm font-medium text-gray-700"
-              >
-                CAM Email
-              </label>
-              <input
-                id="camEmail"
-                type="email"
-                value={form.camEmail}
-                onChange={(e) => updateField("camEmail", e.target.value)}
-                placeholder="Auto-filled from CAM selection"
-                className="w-full px-3 py-2 border border-gray-200 rounded-lg focus:ring-2 focus:ring-[#7CC042]/30 focus:border-[#7CC042] text-sm"
-              />
-            </div>
-
             {/* Contact Name */}
             <div>
               <label
@@ -595,7 +572,92 @@ export default function NewClientPage() {
           </div>
         </div>
 
-        {/* Channel Selection Card */}
+        {/* Commission Card */}
+        <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-6">
+          <h2 className="text-base font-semibold text-gray-800 mb-4">
+            Commission
+          </h2>
+          <div className="space-y-4">
+            <div>
+              <label
+                htmlFor="commissionMechanism"
+                className="mb-1.5 block text-sm font-medium text-gray-700"
+              >
+                Commission Mechanism
+              </label>
+              <select
+                id="commissionMechanism"
+                value={form.commissionMechanism}
+                onChange={(e) =>
+                  updateField(
+                    "commissionMechanism",
+                    e.target.value as FormData["commissionMechanism"]
+                  )
+                }
+                className="w-full px-3 py-2 border border-gray-200 rounded-lg focus:ring-2 focus:ring-[#7CC042]/30 focus:border-[#7CC042] text-sm bg-white"
+              >
+                <option value="">-- Not specified --</option>
+                <option value="sell_in">Sell-in</option>
+                <option value="sell_out">Sell-out</option>
+                <option value="combination">
+                  Combination of sell-in and sell-out
+                </option>
+              </select>
+            </div>
+
+            {(form.commissionMechanism === "sell_in" ||
+              form.commissionMechanism === "combination") && (
+              <div>
+                <label
+                  htmlFor="sellInPct"
+                  className="mb-1.5 block text-sm font-medium text-gray-700"
+                >
+                  Sell-in %
+                </label>
+                <input
+                  id="sellInPct"
+                  type="number"
+                  step="0.01"
+                  min="0"
+                  max="100"
+                  value={form.commissionSellInPct}
+                  onChange={(e) =>
+                    updateField("commissionSellInPct", e.target.value)
+                  }
+                  placeholder="e.g. 5"
+                  className="w-full max-w-xs px-3 py-2 border border-gray-200 rounded-lg focus:ring-2 focus:ring-[#7CC042]/30 focus:border-[#7CC042] text-sm"
+                />
+              </div>
+            )}
+
+            {(form.commissionMechanism === "sell_out" ||
+              form.commissionMechanism === "combination") && (
+              <div>
+                <label
+                  htmlFor="sellOutPct"
+                  className="mb-1.5 block text-sm font-medium text-gray-700"
+                >
+                  Sell-out %
+                </label>
+                <input
+                  id="sellOutPct"
+                  type="number"
+                  step="0.01"
+                  min="0"
+                  max="100"
+                  value={form.commissionSellOutPct}
+                  onChange={(e) =>
+                    updateField("commissionSellOutPct", e.target.value)
+                  }
+                  placeholder="e.g. 3"
+                  className="w-full max-w-xs px-3 py-2 border border-gray-200 rounded-lg focus:ring-2 focus:ring-[#7CC042]/30 focus:border-[#7CC042] text-sm"
+                />
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* Channel Selection Card — now with per-channel CAM dropdown */}
         <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-6">
           <h2 className="text-base font-semibold text-gray-800 mb-4">
             Channels & Services
@@ -612,6 +674,7 @@ export default function NewClientPage() {
                 const selectedServices =
                   form.channelServices[channel.id] ?? [];
                 const serviceCount = selectedServices.length;
+                const assignedCamId = form.channelCams[channel.id] ?? "";
 
                 return (
                   <div
@@ -677,38 +740,65 @@ export default function NewClientPage() {
                       )}
                     </div>
 
-                    {/* Services list (collapsible) */}
-                    {isSelected && isExpanded && services.length > 0 && (
-                      <div className="px-4 pb-3 pt-1 border-t border-gray-100 ml-7">
-                        <p className="text-xs text-gray-400 mb-2 font-medium uppercase tracking-wide">
-                          Select services for {channel.name}
-                        </p>
-                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5">
-                          {services.map((service) => {
-                            const isChecked =
-                              selectedServices.includes(service.id);
-                            return (
-                              <label
-                                key={service.id}
-                                className={`flex items-center gap-2 px-3 py-2 rounded-lg cursor-pointer transition-colors text-sm ${
-                                  isChecked
-                                    ? "bg-[#7CC042]/10 text-gray-800"
-                                    : "hover:bg-gray-50 text-gray-600"
-                                }`}
-                              >
-                                <input
-                                  type="checkbox"
-                                  checked={isChecked}
-                                  onChange={() =>
-                                    toggleService(channel.id, service.id)
-                                  }
-                                  className="accent-[#7CC042] w-3.5 h-3.5"
-                                />
-                                <span>{service.name}</span>
-                              </label>
-                            );
-                          })}
+                    {/* Expanded: CAM dropdown + Services */}
+                    {isSelected && isExpanded && (
+                      <div className="px-4 pb-3 pt-1 border-t border-gray-100 ml-7 space-y-3">
+                        {/* Per-channel CAM dropdown */}
+                        <div>
+                          <label className="text-xs text-gray-500 font-medium uppercase tracking-wide mb-1 block">
+                            CAM for {channel.name}{" "}
+                            <span className="text-red-500">*</span>
+                          </label>
+                          <select
+                            value={assignedCamId}
+                            onChange={(e) =>
+                              setChannelCam(channel.id, e.target.value)
+                            }
+                            className="w-full max-w-sm px-3 py-2 border border-gray-200 rounded-lg focus:ring-2 focus:ring-[#7CC042]/30 focus:border-[#7CC042] text-sm bg-white"
+                          >
+                            <option value="">Select a CAM...</option>
+                            {cams.map((cam) => (
+                              <option key={cam.id} value={cam.id}>
+                                {cam.name} {cam.surname}
+                              </option>
+                            ))}
+                          </select>
                         </div>
+
+                        {/* Services checkboxes */}
+                        {services.length > 0 && (
+                          <div>
+                            <p className="text-xs text-gray-400 mb-2 font-medium uppercase tracking-wide">
+                              Select services for {channel.name}
+                            </p>
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5">
+                              {services.map((service) => {
+                                const isChecked =
+                                  selectedServices.includes(service.id);
+                                return (
+                                  <label
+                                    key={service.id}
+                                    className={`flex items-center gap-2 px-3 py-2 rounded-lg cursor-pointer transition-colors text-sm ${
+                                      isChecked
+                                        ? "bg-[#7CC042]/10 text-gray-800"
+                                        : "hover:bg-gray-50 text-gray-600"
+                                    }`}
+                                  >
+                                    <input
+                                      type="checkbox"
+                                      checked={isChecked}
+                                      onChange={() =>
+                                        toggleService(channel.id, service.id)
+                                      }
+                                      className="accent-[#7CC042] w-3.5 h-3.5"
+                                    />
+                                    <span>{service.name}</span>
+                                  </label>
+                                );
+                              })}
+                            </div>
+                          </div>
+                        )}
                       </div>
                     )}
                   </div>
